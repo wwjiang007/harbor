@@ -17,14 +17,10 @@ package replication
 import (
 	"time"
 
-	"github.com/goharbor/harbor/src/common/job"
 	cfg "github.com/goharbor/harbor/src/core/config"
 	"github.com/goharbor/harbor/src/lib/log"
 	"github.com/goharbor/harbor/src/replication/config"
 	"github.com/goharbor/harbor/src/replication/event"
-	"github.com/goharbor/harbor/src/replication/operation"
-	"github.com/goharbor/harbor/src/replication/policy"
-	"github.com/goharbor/harbor/src/replication/policy/controller"
 	"github.com/goharbor/harbor/src/replication/registry"
 
 	// register the Harbor adapter
@@ -53,15 +49,17 @@ import (
 	_ "github.com/goharbor/harbor/src/replication/adapter/gitlab"
 	// register the DTR adapter
 	_ "github.com/goharbor/harbor/src/replication/adapter/dtr"
+	// register the Artifact Hub adapter
+	_ "github.com/goharbor/harbor/src/replication/adapter/artifacthub"
+	// register the TencentCloud TCR adapter
+	_ "github.com/goharbor/harbor/src/replication/adapter/tencentcr"
+	// register the Github Container Registry adapter
+	_ "github.com/goharbor/harbor/src/replication/adapter/githubcr"
 )
 
 var (
-	// PolicyCtl is a global policy controller
-	PolicyCtl policy.Controller
 	// RegistryMgr is a global registry manager
 	RegistryMgr registry.Manager
-	// OperationCtl is a global operation controller
-	OperationCtl operation.Controller
 	// EventHandler handles images/chart pull/push events
 	EventHandler event.Handler
 )
@@ -76,21 +74,13 @@ func Init(closing, done chan struct{}) error {
 	config.Config = &config.Configuration{
 		CoreURL:          cfg.InternalCoreURL(),
 		TokenServiceURL:  cfg.InternalTokenServiceEndpoint(),
-		JobserviceURL:    cfg.InternalJobServiceURL(),
 		SecretKey:        secretKey,
-		CoreSecret:       cfg.CoreSecret(),
 		JobserviceSecret: cfg.JobserviceSecret(),
 	}
-	// TODO use a global http transport
-	js := job.NewDefaultClient(config.Config.JobserviceURL, config.Config.CoreSecret)
 	// init registry manager
 	RegistryMgr = registry.NewDefaultManager()
-	// init policy controller
-	PolicyCtl = controller.NewController(js)
-	// init operation controller
-	OperationCtl = operation.NewController(js)
 	// init event handler
-	EventHandler = event.NewHandler(PolicyCtl, RegistryMgr, OperationCtl)
+	EventHandler = event.NewHandler(RegistryMgr)
 	log.Debug("the replication initialization completed")
 
 	// Start health checker for registries

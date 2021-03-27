@@ -15,10 +15,9 @@
 package chart
 
 import (
+	"context"
 	"errors"
 	"fmt"
-
-	"github.com/goharbor/harbor/src/lib/orm"
 
 	"github.com/goharbor/harbor/src/common/models"
 	"github.com/goharbor/harbor/src/controller/event"
@@ -40,7 +39,7 @@ func (cph *Handler) Name() string {
 }
 
 // Handle preprocess chart event data and then publish hook event
-func (cph *Handler) Handle(value interface{}) error {
+func (cph *Handler) Handle(ctx context.Context, value interface{}) error {
 	chartEvent, ok := value.(*event.ChartEvent)
 	if !ok {
 		return errors.New("invalid chart event type")
@@ -50,12 +49,12 @@ func (cph *Handler) Handle(value interface{}) error {
 		return fmt.Errorf("data miss in chart event: %v", chartEvent)
 	}
 
-	prj, err := project.Ctl.GetByName(orm.Context(), chartEvent.ProjectName, project.Metadata(true))
+	prj, err := project.Ctl.Get(ctx, chartEvent.ProjectName, project.Metadata(true))
 	if err != nil {
 		log.Errorf("failed to find project[%s] for chart event: %v", chartEvent.ProjectName, err)
 		return err
 	}
-	policies, err := notification.PolicyMgr.GetRelatedPolices(prj.ProjectID, chartEvent.EventType)
+	policies, err := notification.PolicyMgr.GetRelatedPolices(ctx, prj.ProjectID, chartEvent.EventType)
 	if err != nil {
 		log.Errorf("failed to find policy for %s event: %v", chartEvent.EventType, err)
 		return err

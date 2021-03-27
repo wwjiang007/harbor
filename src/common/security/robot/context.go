@@ -16,6 +16,10 @@ package robot
 
 import (
 	"context"
+	rbac_project "github.com/goharbor/harbor/src/common/rbac/project"
+	"github.com/goharbor/harbor/src/common/rbac/system"
+	"github.com/goharbor/harbor/src/controller/robot"
+	"strings"
 	"sync"
 
 	"github.com/goharbor/harbor/src/common/models"
@@ -28,19 +32,21 @@ import (
 
 // SecurityContext implements security.Context interface based on database
 type SecurityContext struct {
-	robot     *model.Robot
-	ctl       project.Controller
-	policy    []*types.Policy
-	evaluator evaluator.Evaluator
-	once      sync.Once
+	robot         *model.Robot
+	isSystemLevel bool
+	ctl           project.Controller
+	policies      []*types.Policy
+	evaluator     evaluator.Evaluator
+	once          sync.Once
 }
 
 // NewSecurityContext ...
-func NewSecurityContext(robot *model.Robot, policy []*types.Policy) *SecurityContext {
+func NewSecurityContext(robot *model.Robot, isSystemLevel bool, policy []*types.Policy) *SecurityContext {
 	return &SecurityContext{
-		ctl:    project.Ctl,
-		robot:  robot,
-		policy: policy,
+		ctl:           project.Ctl,
+		robot:         robot,
+		policies:      policy,
+		isSystemLevel: isSystemLevel,
 	}
 }
 
@@ -76,14 +82,34 @@ func (s *SecurityContext) IsSolutionUser() bool {
 // Can returns whether the robot can do action on resource
 func (s *SecurityContext) Can(ctx context.Context, action types.Action, resource types.Resource) bool {
 	s.once.Do(func() {
-		s.evaluator = rbac.NewProjectEvaluator(s.ctl, rbac.NewBuilderForPolicies(s.GetUsername(), s.policy, filterRobotPolicies))
+		if s.isSystemLevel {
+			var proPolicies []*types.Policy
+			var sysPolicies []*types.Policy
+			var evaluators evaluator.Evaluators
+			for _, p := range s.policies {
+				if strings.HasPrefix(p.Resource.String(), robot.SCOPESYSTEM) {
+					sysPolicies = append(sysPolicies, p)
+				} else if strings.HasPrefix(p.Resource.String(), robot.SCOPEPROJECT) {
+					proPolicies = append(proPolicies, p)
+				}
+			}
+			if len(sysPolicies) != 0 {
+				evaluators = evaluators.Add(system.NewEvaluator(s.GetUsername(), sysPolicies))
+			} else if len(proPolicies) != 0 {
+				evaluators = evaluators.Add(rbac_project.NewEvaluator(s.ctl, rbac_project.NewBuilderForPolicies(s.GetUsername(), proPolicies)))
+			}
+			s.evaluator = evaluators
+
+		} else {
+			s.evaluator = rbac_project.NewEvaluator(s.ctl, rbac_project.NewBuilderForPolicies(s.GetUsername(), s.policies, filterRobotPolicies))
+		}
 	})
 
 	return s.evaluator != nil && s.evaluator.HasPermission(ctx, resource, action)
 }
 
 func filterRobotPolicies(p *models.Project, policies []*types.Policy) []*types.Policy {
-	namespace := rbac.NewProjectNamespace(p.ProjectID)
+	namespace := rbac_project.NewNamespace(p.ProjectID)
 
 	var results []*types.Policy
 	for _, policy := range policies {

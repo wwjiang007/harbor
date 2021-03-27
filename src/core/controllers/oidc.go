@@ -24,11 +24,11 @@ import (
 	"github.com/goharbor/harbor/src/common/dao"
 	"github.com/goharbor/harbor/src/common/models"
 	"github.com/goharbor/harbor/src/common/utils"
-	"github.com/goharbor/harbor/src/common/utils/oidc"
 	"github.com/goharbor/harbor/src/core/api"
 	"github.com/goharbor/harbor/src/core/config"
 	"github.com/goharbor/harbor/src/lib/errors"
 	"github.com/goharbor/harbor/src/lib/log"
+	"github.com/goharbor/harbor/src/pkg/oidc"
 )
 
 const tokenKey = "oidc_token"
@@ -137,6 +137,11 @@ func (oc *OIDCController) Callback() {
 		// If automatic onboard is enabled, skip the onboard page
 		if oidcSettings.AutoOnboard {
 			log.Debug("Doing automatic onboarding\n")
+			if username == "" {
+				oc.SendInternalServerError(fmt.Errorf("unable to recover username for auto onboard, username claim: %s",
+					oidcSettings.UserClaim))
+				return
+			}
 			user, onboarded := userOnboard(oc, info, username, tokenBytes)
 			if onboarded == false {
 				log.Error("User not onboarded\n")

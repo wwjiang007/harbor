@@ -59,14 +59,6 @@ DOCKERFILEPATH_POSTGRESQL=$(DOCKERFILEPATH)/postgresql
 DOCKERFILENAME_POSTGRESQL=Dockerfile
 DOCKERIMAGENAME_POSTGRESQL=goharbor/postgresql-photon
 
-DOCKERFILEPATH_CLAIR=$(DOCKERFILEPATH)/clair
-DOCKERFILENAME_CLAIR=Dockerfile
-DOCKERIMAGENAME_CLAIR=goharbor/clair-photon
-
-DOCKERFILEPATH_CLAIR_ADAPTER=$(DOCKERFILEPATH)/clair-adapter
-DOCKERFILENAME_CLAIR_ADAPTER=Dockerfile
-DOCKERIMAGENAME_CLAIR_ADAPTER=goharbor/clair-adapter-photon
-
 DOCKERFILEPATH_TRIVY_ADAPTER=$(DOCKERFILEPATH)/trivy-adapter
 DOCKERFILENAME_TRIVY_ADAPTER=Dockerfile
 DOCKERIMAGENAME_TRIVY_ADAPTER=goharbor/trivy-adapter-photon
@@ -99,6 +91,9 @@ DOCKERFILEPATH_STANDALONE_DB_MIGRATOR=$(DOCKERFILEPATH)/standalone-db-migrator
 DOCKERFILENAME_STANDALONE_DB_MIGRATOR=Dockerfile
 DOCKERIMAGENAME_STANDALONE_DB_MIGRATOR=goharbor/standalone-db-migrator
 
+DOCKERFILEPATH_EXPORTER=$(DOCKERFILEPATH)/exporter
+DOCKERFILENAME_EXPORTER=Dockerfile
+DOCKERIMAGENAME_EXPORTER=goharbor/harbor-exporter
 
 # for chart server (chartmuseum)
 DOCKERFILEPATH_CHART_SERVER=$(DOCKERFILEPATH)/chartserver
@@ -136,38 +131,6 @@ _build_log:
 	@echo "building log container for photon..."
 	$(DOCKERBUILD) --build-arg harbor_base_image_version=$(BASEIMAGETAG) --build-arg harbor_base_namespace=$(BASEIMAGENAMESPACE) -f $(DOCKERFILEPATH_LOG)/$(DOCKERFILENAME_LOG) -t $(DOCKERIMAGENAME_LOG):$(VERSIONTAG) .
 	@echo "Done."
-
-_build_clair:
-	@if [ "$(CLAIRFLAG)" = "true" ] ; then \
-		if [ "$(BUILDBIN)" != "true" ] ; then \
-			rm -rf $(DOCKERFILEPATH_CLAIR)/binary && mkdir -p $(DOCKERFILEPATH_CLAIR)/binary && \
-			$(call _get_binary, $(CLAIRURL), $(DOCKERFILEPATH_CLAIR)/binary/clair); \
-		else \
-			cd $(DOCKERFILEPATH_CLAIR) && $(DOCKERFILEPATH_CLAIR)/builder $(CLAIRVERSION) && cd - ; \
-		fi ; \
-		echo "building clair container for photon..." ; \
-		$(DOCKERBUILD) --build-arg harbor_base_image_version=$(BASEIMAGETAG) --build-arg harbor_base_namespace=$(BASEIMAGENAMESPACE) --build-arg harbor_base_namespace=$(BASEIMAGENAMESPACE) -f $(DOCKERFILEPATH_CLAIR)/$(DOCKERFILENAME_CLAIR) -t $(DOCKERIMAGENAME_CLAIR):$(VERSIONTAG) . ; \
-		rm -rf $(DOCKERFILEPATH_CLAIR)/binary; \
-		echo "Done." ; \
-	fi
-
-_build_clair_adapter:
-	@if [ "$(CLAIRFLAG)" = "true" ] ; then \
-		if [ "$(BUILDBIN)" != "true" ] ; then \
-			rm -rf $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary && mkdir -p $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary && \
-			$(call _extract_archive, $(CLAIR_ADAPTER_DOWNLOAD_URL), $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary/) && \
-			mv $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary/scanner-clair $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary/harbor-scanner-clair; \
-		else \
-			cd $(DOCKERFILEPATH_CLAIR_ADAPTER) && $(DOCKERFILEPATH_CLAIR_ADAPTER)/builder.sh $(CLAIRADAPTERVERSION) && cd - ; \
-		fi ; \
-		echo "Building Clair adapter container for photon..." ; \
-		$(DOCKERBUILD) --build-arg harbor_base_image_version=$(BASEIMAGETAG) \
-			--build-arg harbor_base_namespace=$(BASEIMAGENAMESPACE) \
-			-f $(DOCKERFILEPATH_CLAIR_ADAPTER)/$(DOCKERFILENAME_CLAIR_ADAPTER) \
-			-t $(DOCKERIMAGENAME_CLAIR_ADAPTER):$(VERSIONTAG) . ; \
-		rm -rf $(DOCKERFILEPATH_CLAIR_ADAPTER)/binary; \
-		echo "Done." ; \
-	fi
 
 _build_trivy_adapter:
 	@if [ "$(TRIVYFLAG)" = "true" ] ; then \
@@ -253,6 +216,11 @@ _build_standalone_db_migrator:
 	@$(DOCKERBUILD) --build-arg harbor_base_image_version=$(BASEIMAGETAG) --build-arg harbor_base_namespace=$(BASEIMAGENAMESPACE) -f $(DOCKERFILEPATH_STANDALONE_DB_MIGRATOR)/$(DOCKERFILENAME_STANDALONE_DB_MIGRATOR) -t $(DOCKERIMAGENAME_STANDALONE_DB_MIGRATOR):$(VERSIONTAG) .
 	@echo "Done."
 
+_compile_and_build_exporter:
+	@echo "compiling and building image for exporter..."
+	@$(DOCKERCMD) build --build-arg harbor_base_image_version=$(BASEIMAGETAG) --build-arg harbor_base_namespace=$(BASEIMAGENAMESPACE) --build-arg build_image=$(GOBUILDIMAGE) -f ${DOCKERFILEPATH_EXPORTER}/${DOCKERFILENAME_EXPORTER} -t $(DOCKERIMAGENAME_EXPORTER):$(VERSIONTAG) .
+	@echo "Done."
+
 define _extract_archive
 	echo "download $1";\
 	$(CURL) --connect-timeout 30 -f -k -L $1 | tar xvz -C $2 || exit 1
@@ -263,7 +231,9 @@ define _get_binary
 	$(CURL) --connect-timeout 30 -f -k -L $1 -o $2 || exit 1
 endef
 
-build: _build_prepare _build_db _build_portal _build_core _build_jobservice _build_log _build_nginx _build_registry _build_registryctl _build_notary _build_clair _build_clair_adapter _build_trivy_adapter _build_redis _build_chart_server
+
+
+build: _build_prepare _build_db _build_portal _build_core _build_jobservice _build_log _build_nginx _build_registry _build_registryctl _build_notary _build_trivy_adapter _build_redis _build_chart_server _compile_and_build_exporter
 
 cleanimage:
 	@echo "cleaning image for photon..."

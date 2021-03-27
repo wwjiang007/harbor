@@ -1,32 +1,62 @@
 package artifact
 
 import (
-	"testing"
-	"time"
-
-	"github.com/goharbor/harbor/src/pkg/retention"
-
+	"context"
+	"github.com/goharbor/harbor/src/common/dao"
 	"github.com/goharbor/harbor/src/controller/event"
+	"github.com/goharbor/harbor/src/controller/retention"
 	"github.com/goharbor/harbor/src/core/config"
 	"github.com/goharbor/harbor/src/lib/selector"
 	"github.com/goharbor/harbor/src/pkg/notification"
+	policy_model "github.com/goharbor/harbor/src/pkg/notification/policy/model"
+	ret "github.com/goharbor/harbor/src/pkg/retention"
+	retentiontesting "github.com/goharbor/harbor/src/testing/controller/retention"
+	testingnotification "github.com/goharbor/harbor/src/testing/pkg/notification/policy"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"os"
+	"testing"
+	"time"
 )
 
 func TestRetentionHandler_Handle(t *testing.T) {
 	config.Init()
-	handler := &RetentionHandler{RetentionController: DefaultRetentionControllerFunc}
+	handler := &RetentionHandler{}
 
 	policyMgr := notification.PolicyMgr
-	retentionCtlFunc := handler.RetentionController
+	oldretentionCtl := retention.Ctl
 
 	defer func() {
 		notification.PolicyMgr = policyMgr
-		handler.RetentionController = retentionCtlFunc
+		retention.Ctl = oldretentionCtl
 	}()
-	notification.PolicyMgr = &fakedNotificationPolicyMgr{}
-	handler.RetentionController = retention.FakedRetentionControllerFunc
+	policyMgrMock := &testingnotification.Manager{}
+	notification.PolicyMgr = policyMgrMock
+	retentionCtl := &retentiontesting.Controller{}
+	retention.Ctl = retentionCtl
+	retentionCtl.On("GetRetentionExecTask", mock.Anything, mock.Anything).
+		Return(&ret.Task{
+			ID:          1,
+			ExecutionID: 1,
+			Status:      "Success",
+			StartTime:   time.Now(),
+			EndTime:     time.Now(),
+		}, nil)
+	retentionCtl.On("GetRetentionExec", mock.Anything, mock.Anything).Return(&ret.Execution{
+		ID:        1,
+		PolicyID:  1,
+		Status:    "Success",
+		Trigger:   "Manual",
+		DryRun:    true,
+		StartTime: time.Now(),
+		EndTime:   time.Now(),
+	}, nil)
+	policyMgrMock.On("GetRelatedPolices", mock.Anything, mock.Anything, mock.Anything).Return([]*policy_model.Policy{
+		{
+			ID: 0,
+		},
+	}, nil)
 
 	type args struct {
 		data interface{}
@@ -65,7 +95,7 @@ func TestRetentionHandler_Handle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := handler.Handle(tt.args.data)
+			err := handler.Handle(context.TODO(), tt.args.data)
 			if tt.wantErr {
 				require.NotNil(t, err, "Error: %s", err)
 				return
@@ -79,4 +109,9 @@ func TestRetentionHandler_Handle(t *testing.T) {
 func TestRetentionHandler_IsStateful(t *testing.T) {
 	handler := &RetentionHandler{}
 	assert.False(t, handler.IsStateful())
+}
+
+func TestMain(m *testing.M) {
+	dao.PrepareTestForPostgresSQL()
+	os.Exit(m.Run())
 }

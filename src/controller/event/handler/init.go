@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/goharbor/harbor/src/controller/event"
 	"github.com/goharbor/harbor/src/controller/event/handler/auditlog"
 	"github.com/goharbor/harbor/src/controller/event/handler/internal"
@@ -10,8 +12,11 @@ import (
 	"github.com/goharbor/harbor/src/controller/event/handler/webhook/chart"
 	"github.com/goharbor/harbor/src/controller/event/handler/webhook/quota"
 	"github.com/goharbor/harbor/src/controller/event/handler/webhook/scan"
-	"github.com/goharbor/harbor/src/lib/orm"
+	"github.com/goharbor/harbor/src/controller/event/metadata"
+	"github.com/goharbor/harbor/src/jobservice/job"
+	"github.com/goharbor/harbor/src/pkg/notification"
 	"github.com/goharbor/harbor/src/pkg/notifier"
+	"github.com/goharbor/harbor/src/pkg/task"
 )
 
 func init() {
@@ -28,7 +33,7 @@ func init() {
 	notifier.Subscribe(event.TopicScanningCompleted, &scan.Handler{})
 	notifier.Subscribe(event.TopicDeleteArtifact, &scan.DelArtHandler{})
 	notifier.Subscribe(event.TopicReplication, &artifact.ReplicationHandler{})
-	notifier.Subscribe(event.TopicTagRetention, &artifact.RetentionHandler{RetentionController: artifact.DefaultRetentionControllerFunc})
+	notifier.Subscribe(event.TopicTagRetention, &artifact.RetentionHandler{})
 
 	// replication
 	notifier.Subscribe(event.TopicPushArtifact, &replication.Handler{})
@@ -37,9 +42,9 @@ func init() {
 	notifier.Subscribe(event.TopicDeleteTag, &replication.Handler{})
 
 	// p2p preheat
-	notifier.Subscribe(event.TopicPushArtifact, &p2p.Handler{Context: orm.Context})
-	notifier.Subscribe(event.TopicScanningCompleted, &p2p.Handler{Context: orm.Context})
-	notifier.Subscribe(event.TopicArtifactLabeled, &p2p.Handler{Context: orm.Context})
+	notifier.Subscribe(event.TopicPushArtifact, &p2p.Handler{})
+	notifier.Subscribe(event.TopicScanningCompleted, &p2p.Handler{})
+	notifier.Subscribe(event.TopicArtifactLabeled, &p2p.Handler{})
 
 	// audit logs
 	notifier.Subscribe(event.TopicPushArtifact, &auditlog.Handler{})
@@ -52,6 +57,14 @@ func init() {
 	notifier.Subscribe(event.TopicDeleteTag, &auditlog.Handler{})
 
 	// internal
-	notifier.Subscribe(event.TopicPullArtifact, &internal.Handler{Context: orm.Context})
-	notifier.Subscribe(event.TopicPushArtifact, &internal.Handler{Context: orm.Context})
+	notifier.Subscribe(event.TopicPullArtifact, &internal.Handler{})
+	notifier.Subscribe(event.TopicPushArtifact, &internal.Handler{})
+
+	task.RegisterTaskStatusChangePostFunc(job.Replication, func(ctx context.Context, taskID int64, status string) error {
+		notification.AddEvent(ctx, &metadata.ReplicationMetaData{
+			ReplicationTaskID: taskID,
+			Status:            status,
+		})
+		return nil
+	})
 }

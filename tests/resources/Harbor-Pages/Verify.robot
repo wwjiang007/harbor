@@ -1,4 +1,5 @@
 *** settings ***
+Library  ../../robot-cases/Group3-Upgrade/util.py
 Resource  ../../resources/Util.robot
 
 *** Keywords ***
@@ -336,7 +337,8 @@ Verify Replicationrule
         Init Chrome Driver
         Log To Console    -----replicationrule-----"${replicationrule}"------------
         Sign In Harbor    ${HARBOR_URL}    ${HARBOR_ADMIN}    ${HARBOR_PASSWORD}
-        Edit Replication Rule By Name    ${replicationrule}
+        Edit Replication Rule    ${replicationrule}
+        Capture Page Screenshot
         @{is_src_registry}=    Get Value From Json    ${json}    $.replicationrule[?(@.rulename=${replicationrule})].is_src_registry
         @{trigger_type}=    Get Value From Json    ${json}    $.replicationrule[?(@.rulename=${replicationrule})].trigger_type
         @{name_filters}=    Get Value From Json    ${json}    $.replicationrule[?(@.rulename=${replicationrule})].name_filters
@@ -350,12 +352,13 @@ Verify Replicationrule
         ${endpoint0}=   Set Variable    @{endpoint}[0]
         Log To Console    -----endpoint0-----${endpoint0}------------
         @{endpoint_type}=    Get Value From Json    ${json}    $.endpoint[?(@.name=${endpoint0})].type
+        @{endpoint_url}=    Get Value From Json    ${json}    $.endpoint[?(@.name=${endpoint0})].url
         Retry Textfield Value Should Be    ${filter_name_id}    @{name_filters}[0]
         Retry Textfield Value Should Be    ${filter_tag_id}    @{tag_filters}[0]
         Retry Textfield Value Should Be    ${rule_name_input}    ${replicationrule}
         Retry Textfield Value Should Be    ${dest_namespace_xpath}    @{dest_namespace}[0]
         Log To Console    -----endpoint_type-----@{endpoint_type}[0]------------
-        ${registry}=    Set Variable If    "@{endpoint_type}[0]"=="harbor"    ${endpoint0}-https://${IP}    ${endpoint0}-https://hub.docker.com
+        ${registry}=    Set Variable If    "@{endpoint_type}[0]"=="harbor"    ${endpoint0}-@{endpoint_url}[0]    ${endpoint0}-https://hub.docker.com
         Log To Console    -------registry---${registry}------------
         Run Keyword If    '@{is_src_registry}[0]' == '${true}'    Retry List Selection Should Be    ${src_registry_dropdown_list}    ${registry}
         ...    ELSE    Retry List Selection Should Be    ${dest_registry_dropdown_list}    ${registry}
@@ -363,6 +366,11 @@ Verify Replicationrule
         Retry List Selection Should Be    ${rule_trigger_select}    @{trigger_type}[0]
         Run Keyword If    '@{trigger_type}[0]' == 'scheduled'    Log To Console    ----------@{trigger_type}[0]------------
         Run Keyword If    '@{trigger_type}[0]' == 'scheduled'    Retry Textfield Value Should Be    ${targetCron_id}    @{cron}[0]
+    END
+
+    Reload Page
+    FOR    ${replicationrule}    IN    @{replicationrules}
+        Delete Replication Rule  ${replicationrule}
     END
     Close Browser
 
@@ -448,13 +456,6 @@ Verify System Setting Allowlist
     Switch To System Settings
     Log To Console  "@{cve_ids}"
     Loop Verifiy CVE_IDs  @{cve_ids}
-    Close Browser
-
-Verify Clair Is Default Scanner
-    Init Chrome Driver
-    Sign In Harbor  ${HARBOR_URL}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}
-    Switch To Scanners Page
-    Should Display The Default Clair Scanner
     Close Browser
 
 Verify Trivy Is Default Scanner
@@ -543,3 +544,27 @@ Loop P2P Preheat Policys
         ${provider_name}=  Get Value From Json  ${json}  $.projects[?(@.name=${project})].p2p_preheat_policy[?(@.name=${policy})].provider_name
         Retry Wait Until Page Contains Element   //clr-dg-row[contains(.,'${policy}') and contains(.,'${provider_name}[0]')]
     END
+
+
+Verify Quotas Display
+    [Arguments]    ${json}
+    Log To Console  "Verify Quotas Display..."
+    @{project}=  Get Value From Json  ${json}  $.quotas.[*].name
+    Init Chrome Driver
+    Sign In Harbor  ${HARBOR_URL}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}
+    FOR    ${project}    IN    @{project}
+        ${storage_quota_ret}=  Get Project Storage Quota Text From Project Quotas List  ${project}
+        ${storage_limit}=  Get Value From Json  ${json}  $.quotas[?(@.name=${project})].storage_limit
+        ${size}=  Get Value From Json  ${json}  $.quotas[?(@.name=${project})].size
+        ${size_in_mb}=  Evaluate  ${size}[0] * 1024 * 1024
+        ${storage_usage}=  Convert Int To Readable File Size  ${size_in_mb}
+        ${storage_usage_without_unit}=  Get Substring  ${storage_usage}  0  -2
+        ${storage_usage_unit}=  Get Substring  ${storage_usage}  -2
+        ${storage_total_size}=  Convert Int To Readable File Size  ${storage_limit}[0]
+        Log All  storage_usage_without_unit:${storage_usage_without_unit}
+        Log All  storage_usage_unit:${storage_usage_unit}
+        Log All  storage_total_size:${storage_total_size}
+        Log All  storage_quota_ret:${storage_quota_ret}
+        Should Match Regexp  ${storage_quota_ret}  ${storage_usage_without_unit}(\\\.\\d{1,2})*${storage_usage_unit} of ${storage_total_size}
+    END
+    Close Browser

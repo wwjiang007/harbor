@@ -5,7 +5,7 @@ import unittest
 import urllib
 import sys
 
-from testutils import ADMIN_CLIENT
+from testutils import ADMIN_CLIENT, suppress_urllib3_warning, DOCKER_USER, DOCKER_PWD
 from testutils import harbor_server
 from testutils import TEARDOWN
 from library.base import _random_name
@@ -13,15 +13,14 @@ from library.base import _assert_status_code
 from library.project import Project
 from library.user import User
 from library.repository import Repository
-from library.repository import push_image_to_project
 from library.registry import Registry
 from library.repository import pull_harbor_image
 from library.artifact import Artifact
 import library.containerd
 
 class TestProxyCache(unittest.TestCase):
-    @classmethod
-    def setUpClass(self):
+    @suppress_urllib3_warning
+    def setUp(self):
         self.url = ADMIN_CLIENT["endpoint"]
         self.user_password = "Aa123456"
         self.project= Project()
@@ -30,8 +29,8 @@ class TestProxyCache(unittest.TestCase):
         self.registry = Registry()
         self.artifact = Artifact()
 
-    @classmethod
-    def tearDownClass(self):
+    @unittest.skipIf(TEARDOWN == False, "Test data won't be erased.")
+    def tearDown(self):
         print("Case completed")
 
     def do_validate(self, registry_type):
@@ -65,9 +64,9 @@ class TestProxyCache(unittest.TestCase):
 
         #1. Create a new registry;
         if registry_type == "docker-hub":
-            user_namespace = "danfengliu"
+            user_namespace = DOCKER_USER
             access_key = user_namespace
-            access_secret = "Aa123456"
+            access_secret = DOCKER_PWD
             registry = "https://hub.docker.com"
             # Memo: ctr will not send image pull request if manifest list already exist, so we pull different manifest list for different registry;
             index_for_ctr = dict(image = "alpine", tag = "3.12.0")
@@ -114,26 +113,23 @@ class TestProxyCache(unittest.TestCase):
 
         #10. Manifest index pulled by docker CLI should be cached;
         ret_index_by_d = self.artifact.waiting_for_reference_exist(project_name, urllib.parse.quote(index_repo_name,'utf-8'), index_for_docker["tag"], **USER_CLIENT)
-        print("Index's reference by docker CLI:",ret_index_by_d[0].references)
-        self.assertTrue(len(ret_index_by_d[0].references) == 1)
+        print("Index's reference by docker CLI:", ret_index_by_d.references)
+        self.assertTrue(len(ret_index_by_d.references) == 1)
 
         #11. Manifest index pulled by ctr CLI should be cached;
         ret_index_by_c = self.artifact.waiting_for_reference_exist(project_name, urllib.parse.quote(index_repo_name_for_ctr,'utf-8'), index_for_ctr["tag"], **USER_CLIENT)
-        print("Index's reference by ctr CLI:",ret_index_by_c[0].references)
-        self.assertTrue(len(ret_index_by_c[0].references) == 1)
+        print("Index's reference by ctr CLI:", ret_index_by_c.references)
+        self.assertTrue(len(ret_index_by_c.references) == 1)
 
     def test_proxy_cache_from_harbor(self):
         self.do_validate("harbor")
 
-    def test_proxy_cache_from_dockerhub(self):
-        self.do_validate("docker-hub")
-
-    def suite():
-        suite = unittest.TestSuite(unittest.makeSuite(TestProxyCache))
-        return suite
+    #def test_proxy_cache_from_dockerhub(self):
+    #    self.do_validate("docker-hub")
 
 if __name__ == '__main__':
-    result = unittest.TextTestRunner(sys.stdout, verbosity=2, failfast=True).run(TestProxyCache.suite())
+    suite = unittest.TestSuite(unittest.makeSuite(TestProxyCache))
+    result = unittest.TextTestRunner(sys.stdout, verbosity=2, failfast=True).run(suite)
     if not result.wasSuccessful():
         raise Exception(r"Proxy cache test failed: ".format(result))
 

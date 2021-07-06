@@ -24,30 +24,30 @@ import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/strfmt"
 	"github.com/goharbor/harbor/src/common"
-	pro "github.com/goharbor/harbor/src/common/dao/project"
 	"github.com/goharbor/harbor/src/common/rbac"
 	"github.com/goharbor/harbor/src/common/security"
 	"github.com/goharbor/harbor/src/common/security/local"
 	"github.com/goharbor/harbor/src/controller/p2p/preheat"
 	"github.com/goharbor/harbor/src/controller/project"
 	"github.com/goharbor/harbor/src/controller/quota"
+	"github.com/goharbor/harbor/src/controller/registry"
 	"github.com/goharbor/harbor/src/controller/repository"
 	"github.com/goharbor/harbor/src/controller/retention"
 	"github.com/goharbor/harbor/src/controller/scanner"
 	"github.com/goharbor/harbor/src/core/api"
-	"github.com/goharbor/harbor/src/core/config"
 	"github.com/goharbor/harbor/src/lib"
+	"github.com/goharbor/harbor/src/lib/config"
 	"github.com/goharbor/harbor/src/lib/errors"
 	"github.com/goharbor/harbor/src/lib/log"
 	"github.com/goharbor/harbor/src/lib/orm"
 	"github.com/goharbor/harbor/src/lib/q"
 	"github.com/goharbor/harbor/src/pkg/audit"
+	"github.com/goharbor/harbor/src/pkg/member"
 	"github.com/goharbor/harbor/src/pkg/project/metadata"
 	"github.com/goharbor/harbor/src/pkg/quota/types"
 	"github.com/goharbor/harbor/src/pkg/retention/policy"
 	"github.com/goharbor/harbor/src/pkg/robot"
 	"github.com/goharbor/harbor/src/pkg/user"
-	"github.com/goharbor/harbor/src/replication"
 	"github.com/goharbor/harbor/src/server/v2.0/handler/model"
 	"github.com/goharbor/harbor/src/server/v2.0/models"
 	operation "github.com/goharbor/harbor/src/server/v2.0/restapi/operations/project"
@@ -63,6 +63,7 @@ func newProjectAPI() *projectAPI {
 		userMgr:       user.Mgr,
 		repositoryCtl: repository.Ctl,
 		projectCtl:    project.Ctl,
+		memberMgr:     member.Mgr,
 		quotaCtl:      quota.Ctl,
 		robotMgr:      robot.Mgr,
 		preheatCtl:    preheat.Ctl,
@@ -78,6 +79,7 @@ type projectAPI struct {
 	userMgr       user.Manager
 	repositoryCtl repository.Controller
 	projectCtl    project.Controller
+	memberMgr     member.Manager
 	quotaCtl      quota.Controller
 	robotMgr      robot.Manager
 	preheatCtl    preheat.Controller
@@ -90,7 +92,7 @@ func (a *projectAPI) CreateProject(ctx context.Context, params operation.CreateP
 		return a.SendError(ctx, err)
 	}
 
-	onlyAdmin, err := config.OnlyAdminCreateProject()
+	onlyAdmin, err := config.OnlyAdminCreateProject(ctx)
 	if err != nil {
 		return a.SendError(ctx, fmt.Errorf("failed to determine whether only admin can create projects: %v", err))
 	}
@@ -108,10 +110,10 @@ func (a *projectAPI) CreateProject(ctx context.Context, params operation.CreateP
 	}
 
 	// populate storage limit
-	if config.QuotaPerProjectEnable() {
+	if config.QuotaPerProjectEnable(ctx) {
 		// the security context is not sys admin, set the StorageLimit the global StoragePerProject
 		if req.StorageLimit == nil || *req.StorageLimit == 0 || !a.isSysAdmin(ctx, rbac.ActionCreate) {
-			setting, err := config.QuotaSetting()
+			setting, err := config.QuotaSetting(ctx)
 			if err != nil {
 				log.Errorf("failed to get quota setting: %v", err)
 				return a.SendError(ctx, fmt.Errorf("failed to get quota setting: %v", err))
@@ -343,7 +345,7 @@ func (a *projectAPI) GetProjectSummary(ctx context.Context, params operation.Get
 	}
 
 	if hasPerm := a.HasProjectPermission(ctx, p.ProjectID, rbac.ActionList, rbac.ResourceMember); hasPerm {
-		fetchSummaries = append(fetchSummaries, getProjectMemberSummary)
+		fetchSummaries = append(fetchSummaries, a.getProjectMemberSummary)
 	}
 
 	if p.IsProxy() {
@@ -506,6 +508,10 @@ func (a *projectAPI) UpdateProject(ctx context.Context, params operation.UpdateP
 }
 
 func (a *projectAPI) GetScannerOfProject(ctx context.Context, params operation.GetScannerOfProjectParams) middleware.Responder {
+	if err := a.RequireAuthenticated(ctx); err != nil {
+		return a.SendError(ctx, err)
+	}
+
 	projectNameOrID := parseProjectNameOrID(params.ProjectNameOrID, params.XIsResourceName)
 	if err := a.RequireProjectAccess(ctx, projectNameOrID, rbac.ActionRead, rbac.ResourceScanner); err != nil {
 		return a.SendError(ctx, err)
@@ -525,6 +531,10 @@ func (a *projectAPI) GetScannerOfProject(ctx context.Context, params operation.G
 }
 
 func (a *projectAPI) ListScannerCandidatesOfProject(ctx context.Context, params operation.ListScannerCandidatesOfProjectParams) middleware.Responder {
+	if err := a.RequireAuthenticated(ctx); err != nil {
+		return a.SendError(ctx, err)
+	}
+
 	projectNameOrID := parseProjectNameOrID(params.ProjectNameOrID, params.XIsResourceName)
 	if err := a.RequireProjectAccess(ctx, projectNameOrID, rbac.ActionCreate, rbac.ResourceScanner); err != nil {
 		return a.SendError(ctx, err)
@@ -557,6 +567,10 @@ func (a *projectAPI) ListScannerCandidatesOfProject(ctx context.Context, params 
 }
 
 func (a *projectAPI) SetScannerOfProject(ctx context.Context, params operation.SetScannerOfProjectParams) middleware.Responder {
+	if err := a.RequireAuthenticated(ctx); err != nil {
+		return a.SendError(ctx, err)
+	}
+
 	projectNameOrID := parseProjectNameOrID(params.ProjectNameOrID, params.XIsResourceName)
 	if err := a.RequireProjectAccess(ctx, projectNameOrID, rbac.ActionCreate, rbac.ResourceScanner); err != nil {
 		return a.SendError(ctx, err)
@@ -611,12 +625,9 @@ func (a *projectAPI) validateProjectReq(ctx context.Context, req *models.Project
 			return errors.BadRequestError(fmt.Errorf("%d is invalid value of registry_id, it should be geater than 0", *req.RegistryID))
 		}
 
-		registry, err := replication.RegistryMgr.Get(*req.RegistryID)
+		registry, err := registry.Ctl.Get(ctx, *req.RegistryID)
 		if err != nil {
 			return fmt.Errorf("failed to get the registry %d: %v", *req.RegistryID, err)
-		}
-		if registry == nil {
-			return errors.NotFoundError(fmt.Errorf("registry %d not found", *req.RegistryID))
 		}
 		permitted := false
 		for _, t := range config.GetPermittedRegistryTypesForProxyCache() {
@@ -679,7 +690,7 @@ func (a *projectAPI) isSysAdmin(ctx context.Context, action rbac.Action) bool {
 }
 
 func getProjectQuotaSummary(ctx context.Context, p *project.Project, summary *models.ProjectSummary) {
-	if !config.QuotaPerProjectEnable() {
+	if !config.QuotaPerProjectEnable(ctx) {
 		log.Debug("Quota per project disabled")
 		return
 	}
@@ -699,7 +710,7 @@ func getProjectQuotaSummary(ctx context.Context, p *project.Project, summary *mo
 	}
 }
 
-func getProjectMemberSummary(ctx context.Context, p *project.Project, summary *models.ProjectSummary) {
+func (a *projectAPI) getProjectMemberSummary(ctx context.Context, p *project.Project, summary *models.ProjectSummary) {
 	var wg sync.WaitGroup
 
 	for _, e := range []struct {
@@ -715,14 +726,13 @@ func getProjectMemberSummary(ctx context.Context, p *project.Project, summary *m
 		wg.Add(1)
 		go func(role int, count *int64) {
 			defer wg.Done()
-
-			total, err := pro.GetTotalOfProjectMembers(p.ProjectID, role)
+			total, err := a.memberMgr.GetTotalOfProjectMembers(orm.Clone(ctx), p.ProjectID, nil, role)
 			if err != nil {
 				log.Warningf("failed to get total of project members of role %d", role)
 				return
 			}
 
-			*count = total
+			*count = int64(total)
 		}(e.role, e.count)
 	}
 
@@ -734,7 +744,7 @@ func getProjectRegistrySummary(ctx context.Context, p *project.Project, summary 
 		return
 	}
 
-	registry, err := replication.RegistryMgr.Get(p.RegistryID)
+	registry, err := registry.Ctl.Get(ctx, p.RegistryID)
 	if err != nil {
 		log.Warningf("failed to get registry %d: %v", p.RegistryID, err)
 	} else if registry != nil {

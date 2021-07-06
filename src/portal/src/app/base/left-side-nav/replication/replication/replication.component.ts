@@ -209,7 +209,7 @@ export class ReplicationComponent implements OnInit, OnDestroy {
   // edit replication rule
   openEditRule(rule: ReplicationRule) {
     if (rule) {
-      this.createEditPolicyComponent.openCreateEditRule(rule.id);
+      this.createEditPolicyComponent.openCreateEditRule(rule);
     }
   }
 
@@ -478,8 +478,12 @@ export class ReplicationComponent implements OnInit, OnDestroy {
 
   refreshRules() {
     this.search.ruleName = "";
-    this.filterComponent.currentValue = "";
-    this.listReplicationRule.refreshRule();
+    if (this.filterComponent.currentValue) {
+      this.filterComponent.currentValue = "";
+      this.filterComponent.filterTerms.next(''); // will trigger refreshing
+    } else {
+      this.listReplicationRule.refreshRule(); // manually refresh
+    }
   }
 
   refreshJobs() {
@@ -497,11 +501,7 @@ export class ReplicationComponent implements OnInit, OnDestroy {
   }
 
   openFilter(isOpen: boolean): void {
-    if (isOpen) {
-      this.isOpenFilterTag = true;
-    } else {
-      this.isOpenFilterTag = false;
-    }
+    this.isOpenFilterTag = isOpen;
   }
   getDuration(j: ReplicationJobItem) {
     if (!j) {

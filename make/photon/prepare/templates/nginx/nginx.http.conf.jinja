@@ -2,7 +2,7 @@ worker_processes auto;
 pid /tmp/nginx.pid;
 
 events {
-  worker_connections 1024;
+  worker_connections 3096;
   use epoll;
   multi_accept on;
 }
@@ -76,7 +76,7 @@ http {
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
-      
+
       proxy_buffering off;
       proxy_request_buffering off;
     }
@@ -98,7 +98,7 @@ http {
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
-      
+
       proxy_buffering off;
       proxy_request_buffering off;
     }
@@ -120,7 +120,7 @@ http {
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
-      
+
       proxy_buffering off;
       proxy_request_buffering off;
     }
@@ -142,7 +142,7 @@ http {
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
-      
+
       proxy_buffering off;
       proxy_request_buffering off;
     }
@@ -206,6 +206,10 @@ http {
     server core:{{ metric.port }};
   }
 
+  upstream js_metrics {
+    server jobservice:{{ metric.port }};
+  }
+
   upstream registry_metrics {
     server registry:{{ metric.port }};
   }
@@ -218,6 +222,7 @@ http {
     listen 9090;
     location = /metrics {
       if ($arg_comp = core) { proxy_pass http://core_metrics; }
+      if ($arg_comp = jobservice) { proxy_pass http://js_metrics; }
       if ($arg_comp = registry) { proxy_pass http://registry_metrics; }
       proxy_pass http://harbor_exporter;
     }

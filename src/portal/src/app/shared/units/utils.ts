@@ -3,7 +3,7 @@ import { HttpHeaders } from '@angular/common/http';
 import { RequestQueryParams } from '../services';
 import { DebugElement } from '@angular/core';
 import { Comparator, State, HttpOptionInterface, HttpOptionTextInterface, QuotaUnitInterface } from '../services';
-import { QuotaUnits, StorageMultipleConstant } from '../entities/shared.const';
+import {QuotaUnit, QuotaUnits, StorageMultipleConstant} from '../entities/shared.const';
 import { AbstractControl } from "@angular/forms";
 import { isValidCron } from 'cron-validator';
 import { ClrDatagridStateInterface } from "@clr/angular";
@@ -567,15 +567,53 @@ export const validateLimit = unitContrl => {
 };
 
 export function formatSize(tagSize: string): string {
-    let size: number = Number.parseInt(tagSize);
+    const size: number = Number.parseInt(tagSize);
     if (Math.pow(1024, 1) <= size && size < Math.pow(1024, 2)) {
-        return (size / Math.pow(1024, 1)).toFixed(2) + "KB";
+        return (size / Math.pow(1024, 1)).toFixed(2) + "KiB";
     } else if (Math.pow(1024, 2) <= size && size < Math.pow(1024, 3)) {
-        return (size / Math.pow(1024, 2)).toFixed(2) + "MB";
+        return (size / Math.pow(1024, 2)).toFixed(2) + "MiB";
     } else if (Math.pow(1024, 3) <= size && size < Math.pow(1024, 4)) {
-        return (size / Math.pow(1024, 3)).toFixed(2) + "GB";
+        return (size / Math.pow(1024, 3)).toFixed(2) + "GiB";
+    } else if (Math.pow(1024, 4) <= size) {
+        return (size / Math.pow(1024, 4)).toFixed(2) + "TiB";
     } else {
         return size + "B";
+    }
+}
+
+/**
+ * get size number of target size (in byte)
+ * @param size
+ */
+export function getSizeNumber(size: number): string | number {
+    if (Math.pow(1024, 1) <= size && size < Math.pow(1024, 2)) {
+        return (size / Math.pow(1024, 1)).toFixed(2);
+    } else if (Math.pow(1024, 2) <= size && size < Math.pow(1024, 3)) {
+        return (size / Math.pow(1024, 2)).toFixed(2);
+    } else if (Math.pow(1024, 3) <= size && size < Math.pow(1024, 4)) {
+        return (size / Math.pow(1024, 3)).toFixed(2);
+    } else if (Math.pow(1024, 4) <= size) {
+        return (size / Math.pow(1024, 4)).toFixed(2);
+    } else {
+        return size;
+    }
+}
+
+/**
+ * get size unit of target size (in byte)
+ * @param size
+ */
+export function getSizeUnit(size: number): string  {
+    if (Math.pow(1024, 1) <= size && size < Math.pow(1024, 2)) {
+        return QuotaUnit.KB;
+    } else if (Math.pow(1024, 2) <= size && size < Math.pow(1024, 3)) {
+        return QuotaUnit.MB;
+    } else if (Math.pow(1024, 3) <= size && size < Math.pow(1024, 4)) {
+        return QuotaUnit.GB;
+    } else if (Math.pow(1024, 4) <= size) {
+        return QuotaUnit.TB;
+    } else {
+        return QuotaUnit.BIT;
     }
 }
 
@@ -631,6 +669,10 @@ export function deleteEmptyKey(obj: Object): void {
     }
 }
 
+/**
+ * Get sorting string from  current state
+ * @param state
+ */
 export function getSortingString(state: ClrDatagridStateInterface): string {
     if (state && state.sort && state.sort.by) {
         let sortString: string;
@@ -645,4 +687,137 @@ export function getSortingString(state: ClrDatagridStateInterface): string {
         return sortString;
     }
     return null;
+}
+
+
+/**
+ * Get query string from current state, rules as below:
+ * query string format: q=k=v,k=~v,k=[min~max],k={v1 v2 v3},k=(v1 v2 v3)
+ * exact match: k=v
+ * fuzzy match: k=~v
+ * range: k=[min~max]
+ * or list: k={v1 v2 v3}
+ * and list: k=(v1 v2 v3)
+ * @param state
+ */
+export function getQueryString(state: ClrDatagridStateInterface): string {
+    let str: string = '';
+    if (state && state.filters && state.filters.length) {
+        state.filters.forEach(item => {
+            if (str) {
+                str += `,${item.property}=~${item.value}`;
+            } else {
+                str += `${item.property}=~${item.value}`;
+            }
+        });
+        return encodeURIComponent(str);
+    }
+    return null;
+}
+
+/**
+ * if two object are the same
+ * @param a
+ * @param b
+ */
+export function isSameObject(a: any, b: any): boolean {
+    if (a && !b) {
+        return false;
+    }
+    if (b && !a) {
+        return false;
+    }
+    if (a && b) {
+        if (Array.isArray(a) || Array.isArray(b)) {
+            return false;
+        }
+        const c: any = Object.keys(a).length > Object.keys(b).length ? a : b;
+        for (const key in c) {
+            if (c.hasOwnProperty(key)) {
+                if (!c[key]) {
+                    // should not use triple-equals here
+                    // tslint:disable-next-line:triple-equals
+                    if (a[key] != b[key]) {
+                        return false;
+                    }
+                } else {
+                    if (Array.isArray(c[key])) {
+                        if (!isSameArrayValue(a[key], b[key])) {
+                            return false;
+                        }
+                    } else if (isObject(c[key])) {
+                        if (!isSameObject(a[key], b[key])) {
+                            return false;
+                        }
+                    } else {
+                        // should not use triple-equals here
+                        // tslint:disable-next-line:triple-equals
+                        if (a[key] != b[key]) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * if two arrays have the same length and contain the same items, they are regarded as the same
+ * @param a
+ * @param b
+ */
+export function isSameArrayValue(a: any, b: any): boolean {
+    if (a && b && Array.isArray(a) && Array.isArray(a)) {
+        if (a.length !== b.length) {
+            return false;
+        }
+        let isSame: boolean = true;
+        a.forEach(itemOfA => {
+            let hasItem: boolean = false;
+            b.forEach(itemOfB => {
+                if (isSameObject(itemOfA, itemOfB)) {
+                    hasItem = true;
+                }
+            });
+            if (!hasItem) {
+                isSame = false;
+            }
+        });
+        if (isSame) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * delete specified param from target url
+ * @param url
+ * @param key
+ */
+export function delUrlParam(url: string, key: string): string {
+    if (url && url.indexOf('?') !== -1) {
+        const baseUrl: string = url.split('?')[0];
+        const query: string = url.split('?')[1];
+        if (query.indexOf(key) > -1) {
+            let obj = {};
+            let arr: any[] = query.split('&');
+            for (let i = 0; i < arr.length; i++) {
+                arr[i] = arr[i].split('=');
+                obj[arr[i][0]] = arr[i][1];
+            }
+            delete obj[key];
+            if (!Object.keys(obj) || !Object.keys(obj).length) {
+                return baseUrl;
+            }
+            return baseUrl + '?' +
+              JSON.stringify(obj)
+                .replace(/[\"\{\}]/g, '')
+                .replace(/\:/g, '=')
+                .replace(/\,/g, '&');
+        }
+    }
+    return url;
 }

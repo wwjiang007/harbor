@@ -22,6 +22,8 @@ Go Into Artifact
     Retry Wait Until Page Not Contains Element  ${artifact_list_spinner}
     Retry Element Click   xpath=//clr-dg-row[contains(.,'${tag}')]//a[contains(.,'sha256')]
     Retry Wait Until Page Contains Element   ${artifact_tag_component}
+    Retry Wait Until Page Not Contains Element  ${artifact_list_spinner}
+
 Should Contain Tag
     [Arguments]  ${tag}
     Retry Wait Until Page Contains Element   xpath=//artifact-tag//clr-dg-row//clr-dg-cell[contains(.,'${tag}')]
@@ -38,7 +40,7 @@ Add A New Tag
 
 Delete A Tag
     [Arguments]  ${tag}
-    Retry Element Click   xpath=//clr-dg-row[contains(.,'${tag}')]//clr-checkbox-wrapper//label[contains(@class,'clr-control-label')]
+    Retry Element Click   xpath=//clr-dg-row[contains(.,'${tag}')]//div[contains(@class,'clr-checkbox-wrapper')]//label[contains(@class,'clr-control-label')]
     Retry Double Keywords When Error  Retry Element Click    ${delete_tag_button}  Retry Wait Until Page Contains Element  ${dialog_delete_button}
     Retry Double Keywords When Error  Retry Element Click  ${dialog_delete_button}  Should Not Contain Tag  ${tag}
 

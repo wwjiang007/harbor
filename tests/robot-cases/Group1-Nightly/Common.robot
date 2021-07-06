@@ -1,20 +1,22 @@
-
-// Copyright (c) 2017 VMware, Inc. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//    http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+# Copyright Project Harbor Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License
 
 *** Settings ***
 Documentation  Harbor BATs
+Library  ../../apitests/python/testutils.py
+Library  ../../apitests/python/library/oras.py
+Library  ../../apitests/python/library/singularity.py
 Resource  ../../resources/Util.robot
 Default Tags  Nightly
 
@@ -25,12 +27,54 @@ ${HARBOR_ADMIN}  admin
 
 *** Test Cases ***
 Test Case - Sign With Admin
+    [tags]  admin
     Init Chrome Driver
     Sign In Harbor  ${HARBOR_URL}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}
     Close Browser
 
+Test Case - Push ORAS and Display
+    [Tags]  push_oras
+    Init Chrome Driver
+    ${d}=    Get Current Date    result_format=%m%s
+
+    Sign In Harbor  ${HARBOR_URL}  user010  Test1@34
+    Create An New Project And Go Into Project  test${d}
+
+    ${repo_name}=  Set Variable  hello-oras-artifact
+    ${tag}=  Set Variable  1.0.0
+    Retry Keyword N Times When Error  5  Oras Push  ${ip}  user010  Test1@34  test${d}  ${repo_name}  ${tag}
+
+    Go Into Project  test${d}
+    Wait Until Page Contains  test${d}/${repo_name}
+
+    Go Into Repo  test${d}/${repo_name}
+    Wait Until Page Contains  ${tag}
+    Close Browser
+
+## TODO: uncomment it once #14470 fixed
+# Test Case - Push SIF and Display
+#     [Tags]  push_sif
+#     Init Chrome Driver
+#     ${d}=    Get Current Date    result_format=%m%s
+#     ${user}=  Set Variable  user010
+#     ${pwd}=  Set Variable  Test1@34
+
+#     Sign In Harbor  ${HARBOR_URL}  ${user}  ${pwd}
+#     Create An New Project And Go Into Project  test${d}
+
+#     ${repo_name}=  Set Variable  busybox
+#     ${tag}=  Set Variable  1.28
+#     Retry Keyword N Times When Error  5  Push Singularity To Harbor  library:  library/default/  ${ip}  ${user}  ${pwd}  test${d}  ${repo_name}  ${tag}
+
+#     Go Into Project  test${d}
+#     Wait Until Page Contains  test${d}/${repo_name}
+
+#     Go Into Repo  test${d}/${repo_name}
+#     Wait Until Page Contains  ${tag}
+#     Close Browser
+
 Test Case - Push CNAB Bundle and Display
-    [Tags]  run-once
+    [Tags]  push_cnab
     Init Chrome Driver
     ${d}=    Get Current Date    result_format=%m%s
 
@@ -48,7 +92,7 @@ Test Case - Push CNAB Bundle and Display
     Go Into Project  test${d}
     Wait Until Page Contains  test${d}/cnab${d}
     Go Into Repo  test${d}/cnab${d}
-    Go Into Index And Contain Artifacts  cnab_tag${d}  limit=3
+    Go Into Index And Contain Artifacts  cnab_tag${d}  total_artifact_count=3  archive_count=2
     Close Browser
 
 Test Case - Create An New Project
@@ -71,7 +115,7 @@ Test Case - Repo Size
     Push Image With Tag  ${ip}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}  library  alpine  2.6  2.6
     Go Into Project  library
     Go Into Repo  alpine
-    Wait Until Page Contains  1.92MB
+    Wait Until Page Contains  1.92MiB
     Close Browser
 
 Test Case - Staticsinfo
@@ -229,17 +273,18 @@ Test Case - User View Logs
     ${d}=   Get Current Date    result_format=%m%s
     ${img}=    Set Variable    kong
     ${tag}=    Set Variable    latest
-    ${replication_image}=    Set Variable    for_log_view
-    ${replication_tag}=      Set Variable    base
-    @{target_images}=  Create List  ${replication_image}
     ${user}=    Set Variable    user002
     ${pwd}=    Set Variable    Test1@34
+    &{image_with_tag}=	 Create Dictionary  image=for_log_view  tag=base
+    ${replication_image}=  Get From Dictionary  ${image_with_tag}  image
+    ${replication_tag}=  Get From Dictionary  ${image_with_tag}  tag
+    @{target_images}=  Create List  '&{image_with_tag}'
 
     Sign In Harbor  ${HARBOR_URL}  ${user}  ${pwd}
     Create An New Project And Go Into Project  project${d}
     Logout Harbor
 
-    Body Of Replication Of Pull Images from Registry To Self   harbor  https://cicd.harbor.vmwarecna.net  ${null}  ${null}  nightly/${replication_image}  project${d}  @{target_images}
+    Body Of Replication Of Pull Images from Registry To Self   harbor  https://cicd.harbor.vmwarecna.net  ${null}  ${null}  nightly/${replication_image}  project${d}  N  Flatten 1 Level  @{target_images}
 
     Push image  ${ip}  ${user}  ${pwd}  project${d}  ${img}:${tag}
     Pull image  ${ip}  ${user}  ${pwd}  project${d}  ${replication_image}:${replication_tag}
@@ -472,7 +517,7 @@ Test Case - Create An New Project With Quotas Set
     Init Chrome Driver
     ${d}=  Get Current Date  result_format=%m%s
     ${storage_quota}=  Set Variable  600
-    ${storage_quota_unit}=  Set Variable  GB
+    ${storage_quota_unit}=  Set Variable  GiB
     Sign In Harbor  ${HARBOR_URL}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}
     Create An New Project And Go Into Project    project${d}  storage_quota=${storage_quota}  storage_quota_unit=${storage_quota_unit}
     ${storage_quota_ret}=  Get Project Storage Quota Text From Project Quotas List  project${d}
@@ -483,11 +528,11 @@ Test Case - Project Storage Quotas Dispaly And Control
     Init Chrome Driver
     ${d}=  Get Current Date  result_format=%m%s
     ${storage_quota}=  Set Variable  350
-    ${storage_quota_unit}=  Set Variable  MB
+    ${storage_quota_unit}=  Set Variable  MiB
     ${image_a}=  Set Variable  one_layer
     ${image_b}=  Set Variable  redis
-    ${image_a_size}=    Set Variable   330.83MB
-    ${image_b_size}=    Set Variable   34.1\\dMB
+    ${image_a_size}=    Set Variable   330.83MiB
+    ${image_b_size}=    Set Variable   34.1\\dMiB
     ${image_a_ver}=  Set Variable  1.0
     ${image_b_ver}=  Set Variable  donotremove5.0
     Sign In Harbor  ${HARBOR_URL}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}
@@ -516,7 +561,7 @@ Test Case - Project Quotas Control Under Copy
     ${image_a_ver}=  Set Variable  donotremove5.0
     ${image_b_ver}=  Set Variable  do_not_remove_6.8.3
     ${storage_quota}=  Set Variable  330
-    ${storage_quota_unit}=  Set Variable  MB
+    ${storage_quota_unit}=  Set Variable  MiB
     Sign In Harbor  ${HARBOR_URL}  ${HARBOR_ADMIN}  ${HARBOR_PASSWORD}
     Create An New Project And Go Into Project  project_a_${d}
     Create An New Project And Go Into Project  project_b_${d}  storage_quota=${storage_quota}  storage_quota_unit=${storage_quota_unit}
@@ -653,7 +698,7 @@ Test Case - Push Docker Manifest Index and Display
     Go Into Project  test${d}
     Wait Until Page Contains  test${d}/index${d}
     Go Into Repo  test${d}/index${d}
-    Go Into Index And Contain Artifacts  index_tag${d}  limit=2
+    Go Into Index And Contain Artifacts  index_tag${d}  total_artifact_count=2
     Close Browser
 
 Test Case - Push Helm Chart and Display

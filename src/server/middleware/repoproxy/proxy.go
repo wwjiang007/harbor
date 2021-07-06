@@ -17,25 +17,23 @@ package repoproxy
 import (
 	"context"
 	"fmt"
-	"github.com/goharbor/harbor/src/common/models"
 	"github.com/goharbor/harbor/src/common/security"
 	"github.com/goharbor/harbor/src/common/security/proxycachesecret"
 	"github.com/goharbor/harbor/src/controller/project"
 	"github.com/goharbor/harbor/src/controller/proxy"
+	"github.com/goharbor/harbor/src/controller/registry"
 	"github.com/goharbor/harbor/src/lib"
 	"github.com/goharbor/harbor/src/lib/errors"
 	httpLib "github.com/goharbor/harbor/src/lib/http"
 	"github.com/goharbor/harbor/src/lib/log"
 	"github.com/goharbor/harbor/src/lib/orm"
-	"github.com/goharbor/harbor/src/replication/model"
-	"github.com/goharbor/harbor/src/replication/registry"
+	proModels "github.com/goharbor/harbor/src/pkg/project/models"
+	"github.com/goharbor/harbor/src/pkg/reg/model"
 	"github.com/goharbor/harbor/src/server/middleware"
 	"io"
 	"net/http"
 	"time"
 )
-
-var registryMgr = registry.NewDefaultManager()
 
 const (
 	contentLength       = "Content-Length"
@@ -82,7 +80,7 @@ func handleBlob(w http.ResponseWriter, r *http.Request, next http.Handler) error
 	return nil
 }
 
-func preCheck(ctx context.Context) (art lib.ArtifactInfo, p *models.Project, ctl proxy.Controller, err error) {
+func preCheck(ctx context.Context) (art lib.ArtifactInfo, p *proModels.Project, ctl proxy.Controller, err error) {
 	none := lib.ArtifactInfo{}
 	art = lib.GetArtifactInfo(ctx)
 	if art == none {
@@ -97,7 +95,12 @@ func preCheck(ctx context.Context) (art lib.ArtifactInfo, p *models.Project, ctl
 func ManifestMiddleware() func(http.Handler) http.Handler {
 	return middleware.New(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		if err := handleManifest(w, r, next); err != nil {
-			httpLib.SendError(w, err)
+			if errors.IsNotFoundErr(err) {
+				httpLib.SendError(w, err)
+				return
+			}
+			log.Errorf("failed to proxy manifest, fallback to local, request uri: %v, error: %v", r.RequestURI, err)
+			next.ServeHTTP(w, r)
 		}
 	})
 }
@@ -154,7 +157,7 @@ func handleManifest(w http.ResponseWriter, r *http.Request, next http.Handler) e
 	return nil
 }
 
-func proxyManifestGet(ctx context.Context, w http.ResponseWriter, ctl proxy.Controller, p *models.Project, art lib.ArtifactInfo, remote proxy.RemoteInterface) error {
+func proxyManifestGet(ctx context.Context, w http.ResponseWriter, ctl proxy.Controller, p *proModels.Project, art lib.ArtifactInfo, remote proxy.RemoteInterface) error {
 	man, err := ctl.ProxyManifest(ctx, art, remote)
 	if err != nil {
 		return err
@@ -170,11 +173,11 @@ func proxyManifestGet(ctx context.Context, w http.ResponseWriter, ctl proxy.Cont
 	return nil
 }
 
-func canProxy(p *models.Project) bool {
+func canProxy(p *proModels.Project) bool {
 	if p.RegistryID < 1 {
 		return false
 	}
-	reg, err := registryMgr.Get(p.RegistryID)
+	reg, err := registry.Ctl.Get(orm.Context(), p.RegistryID)
 	if err != nil {
 		log.Errorf("failed to get registry, error:%v", err)
 		return false
@@ -229,13 +232,13 @@ func DisableBlobAndManifestUploadMiddleware() func(http.Handler) http.Handler {
 	})
 }
 
-func proxyManifestHead(ctx context.Context, w http.ResponseWriter, ctl proxy.Controller, p *models.Project, art lib.ArtifactInfo, remote proxy.RemoteInterface) error {
+func proxyManifestHead(ctx context.Context, w http.ResponseWriter, ctl proxy.Controller, p *proModels.Project, art lib.ArtifactInfo, remote proxy.RemoteInterface) error {
 	exist, desc, err := ctl.HeadManifest(ctx, art, remote)
 	if err != nil {
 		return err
 	}
 	if !exist || desc == nil {
-		return errors.NotFoundError(fmt.Errorf("The tag %v:%v is not found", art.Repository, art.Tag))
+		return errors.NotFoundError(fmt.Errorf("the tag %v:%v is not found", art.Repository, art.Tag))
 	}
 	go func(art lib.ArtifactInfo) {
 		// After docker 20.10 or containerd, the client heads the tag first,

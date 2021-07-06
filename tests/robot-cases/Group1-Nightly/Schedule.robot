@@ -1,17 +1,16 @@
-
-// Copyright (c) 2017 VMware, Inc. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//    http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+# Copyright Project Harbor Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License
 
 *** Settings ***
 Documentation  Harbor BATs
@@ -58,7 +57,7 @@ Test Case - Proxy Cache
         Go Into Project  project${d}
         ${repo_out}=  Run Keyword And Ignore Error  Go Into Repo  project${d}/${user_namespace}/${manifest_index}
         Continue For Loop If  '${repo_out[0]}'=='FAIL'
-        ${artifact_out}=  Run Keyword And Ignore Error  Go Into Index And Contain Artifacts  ${manifest_tag}  limit=1
+        ${artifact_out}=  Run Keyword And Ignore Error  Go Into Index And Contain Artifacts  ${manifest_tag}  total_artifact_count=1
         Exit For Loop If  '${artifact_out[0]}'=='PASS'
     END
     Should Be Equal As Strings  '${artifact_out[0]}'  'PASS'

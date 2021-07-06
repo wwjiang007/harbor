@@ -150,7 +150,14 @@ Test Case - Replication Rule Delete
 
 Test Case - Replication Of Pull Images from DockerHub To Self
     @{target_images}=  Create List  mariadb  centos
-    Body Of Replication Of Pull Images from Registry To Self   docker-hub  https://hub.docker.com/  ${DOCKER_USER}    ${DOCKER_PWD}  ${DOCKER_USER}/{cent*,mariadb}  ${null}  @{target_images}
+    &{image1_with_tag}=	 Create Dictionary  image=centos  tag=1.0
+    &{image2_with_tag}=	 Create Dictionary  image=mariadb  tag=latest
+    ${image1}=  Get From Dictionary  ${image1_with_tag}  image
+    ${image1}=  Get Substring  ${image1}  0  -2
+    Log All  image1:${image1}
+    ${image2}=  Get From Dictionary  ${image2_with_tag}  image
+    @{target_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'
+    Body Of Replication Of Pull Images from Registry To Self   docker-hub  https://hub.docker.com/  ${DOCKER_USER}    ${DOCKER_PWD}  ${DOCKER_USER}/{${image1}*,${image2}}  ${null}  N  Flatten 1 Level  @{target_images}
 
 Test Case - Replication Of Push Images from Self To Harbor
     Init Chrome Driver
@@ -280,8 +287,54 @@ Test Case - Replication Of Push Images to AWS-ECR Triggered By Event
     Body Of Replication Of Push Images to Registry Triggered By Event  aws-ecr  us-east-2  ${ecr_ac_id}  ${ecr_ac_key}  harbor-nightly-replication
 
 Test Case - Replication Of Pull Images from Gitlab To Self
-    @{target_images}=  Create List  photon  alpine
-    Body Of Replication Of Pull Images from Registry To Self   gitlab   https://registry.gitlab.com    ${gitlab_id}    ${gitlab_key}    dannylunsa/test_replication/{photon,alpine}  ${null}  @{target_images}
+    &{image1_with_tag}=	 Create Dictionary  image=photon  tag=1.0
+    &{image2_with_tag}=	 Create Dictionary  image=alpine  tag=latest
+    ${image1}=  Get From Dictionary  ${image1_with_tag}  image
+    ${image2}=  Get From Dictionary  ${image2_with_tag}  image
+    @{target_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'
+    Body Of Replication Of Pull Images from Registry To Self   gitlab   https://registry.gitlab.com    ${gitlab_id}    ${gitlab_key}    dannylunsa/test_replication/{${image1},${image2}}  ${null}  N  Flatten All Levels  @{target_images}
 
 Test Case - Replication Of Push Images to Gitlab Triggered By Event
     Body Of Replication Of Push Images to Registry Triggered By Event    gitlab   https://registry.gitlab.com    ${gitlab_id}    ${gitlab_key}    dannylunsa/test_replication
+
+Test Case - Replication Of Pull Manifest List and CNAB from Harbor To Self
+    &{image1_with_tag}=	 Create Dictionary  image=busybox  tag=1.32.0  total_artifact_count=9  archive_count=0
+    &{image2_with_tag}=	 Create Dictionary  image=index101603308079  tag=index_tag101603308079  total_artifact_count=2  archive_count=0
+    &{image3_with_tag}=	 Create Dictionary  image=cnab011609785126  tag=cnab_tag011609785126  total_artifact_count=3  archive_count=2
+    ${image1}=  Get From Dictionary  ${image1_with_tag}  image
+    ${image2}=  Get From Dictionary  ${image2_with_tag}  image
+    ${image3}=  Get From Dictionary  ${image3_with_tag}  image
+    @{target_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'  '&{image3_with_tag}'
+    Body Of Replication Of Pull Images from Registry To Self   harbor  https://cicd.harbor.vmwarecna.net  admin  qA5ZgV  nightly/{${image1},${image2},${image3}}  ${null}  Y  Flatten 1 Level  @{target_images}
+
+Test Case - Image Namespace Level Flattening
+    [tags]  flattening
+    ${src_endpoint}=  Set Variable  ${ip1}
+
+    #Test only for <Flatten All Levels>
+    &{image1_with_tag}=	 Create Dictionary  image=test_image_1  tag=tag.1  total_artifact_count=1  archive_count=0
+    &{image2_with_tag}=	 Create Dictionary  image=level_1/test_image_2  tag=tag.2  total_artifact_count=1  archive_count=0
+    &{image3_with_tag}=	 Create Dictionary  image=level_1/level_2/test_image_3  tag=tag.3  total_artifact_count=1  archive_count=0
+    @{src_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'  '&{image3_with_tag}'
+    Replication With Flattening  ${src_endpoint}  10  Flatten All Levels  /  @{src_images}
+
+    #Test only for <Flatten 1 Level>
+    &{image1_with_tag}=	 Create Dictionary  image=test_image_1  tag=tag.1  total_artifact_count=1  archive_count=0
+    &{image2_with_tag}=	 Create Dictionary  image=level_1/test_image_2  tag=tag.2  total_artifact_count=1  archive_count=0
+    &{image3_with_tag}=	 Create Dictionary  image=level_1/level_2/test_image_3  tag=tag.3  total_artifact_count=1  archive_count=0
+    @{src_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'  '&{image3_with_tag}'
+    Replication With Flattening  ${src_endpoint}  10  Flatten 1 Level  ${null}  @{src_images}
+
+    #Test only for <Flatten 2 Levels>
+    &{image1_with_tag}=	 Create Dictionary  image=level_1/test_image_1  tag=tag.1  total_artifact_count=1  archive_count=0
+    &{image2_with_tag}=	 Create Dictionary  image=level_1/level_2/test_image_2  tag=tag.2  total_artifact_count=1  archive_count=0
+    &{image3_with_tag}=	 Create Dictionary  image=level_1/level_2/level_3/test_image_3  tag=tag.3  total_artifact_count=1  archive_count=0
+    @{src_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'  '&{image3_with_tag}'
+    Replication With Flattening  ${src_endpoint}  10  Flatten 2 Levels  level_1/  @{src_images}
+
+    #Test only for <Flatten 3 Levels>
+    &{image1_with_tag}=	 Create Dictionary  image=level_1/level_2/test_image_1  tag=tag.1  total_artifact_count=1  archive_count=0
+    &{image2_with_tag}=	 Create Dictionary  image=level_1/level_2/level_3/test_image_2  tag=tag.2  total_artifact_count=1  archive_count=0
+    &{image3_with_tag}=	 Create Dictionary  image=level_1/level_2/level_3/level_4/test_image_3  tag=tag.3  total_artifact_count=1  archive_count=0
+    @{src_images}=  Create List  '&{image1_with_tag}'  '&{image2_with_tag}'  '&{image3_with_tag}'
+    Replication With Flattening  ${src_endpoint}  20  Flatten 3 Levels  level_1/level_2/  @{src_images}

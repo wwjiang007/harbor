@@ -21,17 +21,8 @@ import (
 func init() {
 	orm.RegisterModel(
 		new(User),
-		new(Project),
 		new(Role),
-		new(RepoRecord),
-		new(ProjectMetadata),
-		new(ConfigEntry),
-		new(Label),
 		new(ResourceLabel),
-		new(UserGroup),
-		new(JobLog),
 		new(OIDCUser),
-		new(ProjectBlob),
-		new(ArtifactAndBlob),
 	)
 }
